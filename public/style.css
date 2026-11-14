@@ -2,6 +2,10 @@
 :root { --ink: #3b2412; --card: #fff8ea; --gold: #d9a35b; --soft: #7a5a3a; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #e8cf9a; font-family: "Rubik", "Segoe UI", Arial, sans-serif; color: var(--ink); touch-action: none; user-select: none; -webkit-user-select: none; }
 #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#overlay { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+.familyline { margin-top: 12px; background: #eafaf0; border-radius: 12px; padding: 8px; text-align: center; font-weight: 700; }
+.pill.low { background: #fadbd8; border-color: #e74c3c; animation: glow 0.8s infinite alternate; }
+.starter .em { font-size: 40px; display: block; }
 .hidden { display: none !important; }
 
 .overlay { position: fixed; inset: 0; background: rgba(50, 28, 10, .5); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; padding: 14px; z-index: 30; overflow-y: auto; }
@@ -21,6 +25,7 @@ input { width: 100%; font-size: 20px; padding: 10px 14px; border-radius: 14px; b
 #starters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .starter { background: #fff; border: 3px solid #ead6b0; border-radius: 16px; padding: 6px; text-align: center; cursor: pointer; font-weight: 700; font-size: 15px; }
 .starter img { width: 64px; height: 64px; display: block; margin: 0 auto; }
+.starter small { display: block; font-weight: 400; color: var(--soft); font-size: 12px; }
 .starter.sel { border-color: #27ae60; background: #eafaf0; }
 button { font-family: inherit; cursor: pointer; color: inherit; }
 .big { display: block; width: 100%; margin-top: 14px; font-size: 21px; font-weight: 800; padding: 13px; border: none; border-radius: 16px; background: #27ae60; color: #fff; box-shadow: 0 5px 0 #1b7a43; }

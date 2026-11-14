@@ -18,6 +18,7 @@
   "homepage": "https://github.com/shgoren/game_for_kfir#readme",
   "dependencies": {
     "qrcode": "^1.5.4",
+    "three": "^0.170.0",
     "ws": "^8.23.0"
   },
   "private": true

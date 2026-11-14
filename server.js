@@ -14,7 +14,7 @@ const BAN_MINUTES = parseFloat(process.env.BAN_MINUTES || '3');
 const SAVE_FILE = process.env.SAVE_FILE || path.join(__dirname, 'world.json');
 const START_COINS = parseInt(process.env.START_COINS || '3000', 10);
 const QR_BONUS = parseInt(process.env.QR_BONUS || '200', 10);
-const SAVE_VERSION = 2;
+const SAVE_VERSION = 3;
 const MAX_HOUSES_PER_PLAYER = 12;
 const MAX_CONTAINERS_PER_PLAYER = 3;
 const MAX_OWNED_VEHICLES = 12;
@@ -47,6 +47,7 @@ let containers = [];
 const peppers = new Map();
 let accounts = {};      // token -> חשבון
 let mazor = { stage: 0, progress: {}, helpers: [] };
+let moshav = { families: 4 };
 let boards = {};        // raceId -> [{name, ms}]
 const bans = new Map();
 let dirty = false;
@@ -65,6 +66,7 @@ function load() {
     containers = data.containers || [];
     accounts = data.accounts || {};
     mazor = data.mazor || mazor;
+    moshav = data.moshav || moshav;
     boards = data.boards || {};
     for (const v of data.vehicles || []) vehicles.set(v.id, { ...v, driver: null, pass: [] });
     for (const o of [...houses, ...containers, ...(data.vehicles || [])]) {
@@ -82,7 +84,7 @@ function save(sync) {
   if (!dirty) return;
   dirty = false;
   const data = {
-    version: SAVE_VERSION, houses, containers, accounts, mazor, boards,
+    version: SAVE_VERSION, houses, containers, accounts, mazor, moshav, boards,
     vehicles: [...vehicles.values()].filter((v) => v.ownerAid && !v.temp).map(({ driver, pass, ...v }) => v),
   };
   if (sync) fs.writeFileSync(SAVE_FILE, JSON.stringify(data));
@@ -91,7 +93,7 @@ function save(sync) {
 setInterval(save, 10000);
 
 const extraSolids = () => houses.concat(containers);
-const vehicleView = (v) => ({ id: v.id, type: v.type, x: Math.round(v.x), y: Math.round(v.y), a: +v.a.toFixed(2), owner: v.owner, ownerAid: v.ownerAid, color: v.color, temp: !!v.temp, driver: v.driver, pass: v.pass });
+const vehicleView = (v) => ({ h: v.h || 0, id: v.id, type: v.type, x: Math.round(v.x), y: Math.round(v.y), a: +v.a.toFixed(2), owner: v.owner, ownerAid: v.ownerAid, color: v.color, temp: !!v.temp, driver: v.driver, pass: v.pass });
 const publicObj = ({ ownerToken, ...o }) => o;
 
 // ---------- פלפלים ----------
@@ -115,7 +117,7 @@ const announce = (text) => broadcast({ t: 'msg', text });
 const err = (p, text) => send(p.ws, { t: 'err', text });
 
 function acctView(a) {
-  return { aid: a.aid, coins: a.coins, inv: a.inv, quests: a.quests, visited: a.visited, best: a.best, hat: a.hat, hats: a.hats };
+  return { aid: a.aid, coins: a.coins, inv: a.inv, quests: a.quests, visited: a.visited, best: a.best, hat: a.hat, hats: a.hats, tools: a.tools, food: Math.round(a.food), water: Math.round(a.water), boxes: a.boxes, places: a.places };
 }
 function pushAcct(p) { dirty = true; send(p.ws, { t: 'acct', acct: acctView(p.acct) }); }
 function addCoins(p, n) { p.acct.coins = Math.max(0, p.acct.coins + n); pushAcct(p); }
@@ -221,6 +223,7 @@ function handle(p, m) {
         const v = vehicles.get(p.vid);
         if (v && v.driver === p.id) {
           v.x = clampX(num(m.x, v.x)); v.y = clampY(num(m.y, v.y)); v.a = num(m.a, v.a);
+          v.h = Math.max(0, Math.min(30, num(m.h, 0)));
           if (v.ownerAid) dirty = true;
         }
         if (v) { p.x = v.x; p.y = v.y; p.a = v.a; }
@@ -281,12 +284,20 @@ function handle(p, m) {
       if (item.vehicle && [...vehicles.values()].filter((v) => v.ownerAid === A.aid && !v.temp).length >= MAX_OWNED_VEHICLES)
         return err(p, 'יש לך כבר המון כלי רכב!');
       A.coins -= cost;
-      if (item.material) {
+      if (item.tool) {
+        if (A.tools.includes(item.id)) { A.coins += cost; return err(p, 'כבר יש לך ' + item.name); }
+        A.tools.push(item.id);
+        completeQuest(p, 'tools');
+        send(p.ws, { t: 'bought', text: `${item.emoji} קנית ${item.name}!` });
+      } else if (item.material) {
         A.inv[item.id] = (A.inv[item.id] || 0) + qty;
         completeQuest(p, 'materials');
         send(p.ws, { t: 'bought', text: `${item.emoji} קנית ${qty} ${item.name}` });
-      } else if (item.boost) {
-        send(p.ws, { t: 'boost', secs: item.boost, text: `${item.emoji} יאמי! ${item.name} — אתה רץ מהר יותר` });
+      } else if (item.food || item.water) {
+        A.food = Math.min(100, A.food + (item.food || 0));
+        A.water = Math.min(100, A.water + (item.water || 0));
+        if (item.boost) send(p.ws, { t: 'boost', secs: item.boost, text: `${item.emoji} יאמי! כל המשפחה אכלה — רצים מהר יותר` });
+        else send(p.ws, { t: 'bought', text: `${item.emoji} ${item.name} למשפחה` });
       } else if (item.hat) {
         A.hats.push(item.hat); A.hat = item.hat;
         send(p.ws, { t: 'bought', text: `${item.emoji} ${item.name} חדש!` });
@@ -325,7 +336,9 @@ function handle(p, m) {
     case 'build': {
       const type = MAP.HOUSE_TYPES[m.type];
       if (!type) return;
-      if (!hasMaterials(A.inv, type.need)) return err(p, 'חסרים חומרי בניין — קנה אותם במרכז הקניות');
+      const missingTool = type.tools.find((t) => !A.tools.includes(t));
+      if (missingTool) return err(p, `חסר לך כלי: ${MAP.TOOLS[missingTool].name} — קנה בחנות הכלים או מצא ארגז כלים בשטח`);
+      if (!hasMaterials(A.inv, type.need)) return err(p, 'חסרים חומרי בניין — קנה אותם במרכז המסחרי');
       if (houses.filter((h) => h.ownerToken === p.token).length >= MAX_HOUSES_PER_PLAYER) return err(p, 'בנית כבר המון בתים! 🏘️');
       const r = { x: Math.round(num(m.x, 0)), y: Math.round(num(m.y, 0)), w: type.w, h: type.h };
       if (!near(p, r.x + r.w / 2, r.y + r.h / 2, 260)) return;
@@ -343,6 +356,8 @@ function handle(p, m) {
       if (!nearInteract(p, 'mazor')) return;
       if (mazor.stage >= MAP.MAZOR_STAGES.length) return;
       const st = MAP.MAZOR_STAGES[mazor.stage];
+      const mt = st.tools.find((t) => !A.tools.includes(t));
+      if (mt) return err(p, `לשלב "${st.name}" צריך ${MAP.TOOLS[mt].emoji} ${MAP.TOOLS[mt].name} — קנה בחנות הכלים`);
       let gave = 0;
       for (const k in st.need) {
         const missing = st.need[k] - (mazor.progress[k] || 0);
@@ -452,6 +467,93 @@ function handle(p, m) {
       completeQuest(p, race.id);
       break;
     }
+    case 'family': {
+      if (!nearInteract(p, 'office')) return;
+      if (moshav.families >= MAP.planned.length) return err(p, 'כל המגרשים במושב מלאים! 🏘️');
+      const F = MAP.FAMILY_COST;
+      if (A.coins < F.coins) return err(p, `צריך ${F.coins} מטבעות כדי להביא משפחה`);
+      if (!hasMaterials(A.inv, F.need)) return err(p, 'צריך גם 2 בלוקים ומלט לבית של המשפחה החדשה');
+      A.coins -= F.coins;
+      for (const k in F.need) A.inv[k] -= F.need[k];
+      moshav.families++;
+      moshav.t = Date.now();
+      dirty = true;
+      pushAcct(p);
+      broadcast({ t: 'moshav', moshav });
+      announce(`👨‍👩‍👧‍👦 משפחה חדשה הגיעה לעין יהב בזכות ${p.name}! עכשיו יש ${moshav.families} משפחות`);
+      completeQuest(p, 'family');
+      break;
+    }
+    case 'drink': {
+      const sp = MAP.springs.find((q) => near(p, q.x, q.y, q.r + 80));
+      if (!sp) return;
+      if (A.water >= 99) return;
+      A.water = 100;
+      pushAcct(p);
+      send(p.ws, { t: 'bought', text: `💧 כל המשפחה שתתה מ${sp.name}` });
+      break;
+    }
+    case 'toolbox': {
+      const tb = MAP.toolboxes.find((q) => q.id === m.id);
+      if (!tb || A.boxes[tb.id] || !near(p, tb.x, tb.y, 120)) return;
+      A.boxes[tb.id] = true;
+      const missing = Object.keys(MAP.TOOLS).filter((t) => !A.tools.includes(t));
+      if (missing.length) {
+        const t = missing[Math.floor(Math.random() * missing.length)];
+        A.tools.push(t);
+        send(p.ws, { t: 'found', text: `🧰 מצאת ארגז כלים! בפנים: ${MAP.TOOLS[t].emoji} ${MAP.TOOLS[t].name}` });
+        completeQuest(p, 'tools');
+      } else {
+        A.coins += 150;
+        send(p.ws, { t: 'found', text: '🧰 מצאת ארגז! היו בו 150 🪙' });
+      }
+      pushAcct(p);
+      break;
+    }
+    case 'landmark': {
+      const lm = MAP.landmarks.find((q) => q.id === m.id);
+      if (!lm || A.places[lm.id] || !near(p, lm.x, lm.y, lm.r + 120)) return;
+      A.places[lm.id] = true;
+      A.coins += lm.reward;
+      pushAcct(p);
+      send(p.ws, { t: 'found', text: `🗺️ גילית את ${lm.name}! +${lm.reward} 🪙` });
+      if (Object.keys(A.places).length >= 3) completeQuest(p, 'explore');
+      break;
+    }
+    case 'jobStart': {
+      const j = MAP.JOB_PICKUPS.find((q) => q.id === m.id);
+      if (!j || !near(p, j.x, j.y, 150)) return;
+      if (!p.vid) return err(p, 'צריך רכב כדי להוביל ארגזים — טרקטור, ג׳יפ או טרקטורון');
+      p.job = { id: j.id, t0: Date.now(), d: Math.hypot(j.x - 4615, j.y - 3845) };
+      send(p.ws, { t: 'jobGo', id: j.id });
+      break;
+    }
+    case 'jobDone': {
+      if (!p.job || !nearInteract(p, 'packing', 150)) return;
+      const ms = Date.now() - p.job.t0;
+      const pay = 100 + Math.round(p.job.d / 8);
+      p.job = null;
+      if (ms < 2500) return;
+      A.coins += pay;
+      pushAcct(p);
+      send(p.ws, { t: 'found', text: `📦 מסרת את הארגזים לבית האריזה! +${pay} 🪙` });
+      completeQuest(p, 'job');
+      break;
+    }
+    case 'jump': {
+      const air = num(m.air, 0);
+      const v = p.vid && vehicles.get(p.vid);
+      const now = Date.now();
+      if (!v || air < 0.8 || air > 5 || now - (p.lastJump || 0) < 1500) return;
+      p.lastJump = now;
+      const pay = Math.round(air * 30);
+      A.coins += pay;
+      pushAcct(p);
+      send(p.ws, { t: 'jumpPay', air, pay });
+      if (air >= 1.0 && ['dirtbike', 'moto', 'atv'].includes(v.type)) completeQuest(p, 'jump');
+      if (air >= 2.2) announce(`🏍️💨 ${p.name} קפץ קפיצה של ${air.toFixed(1)} שניות באוויר!`);
+      break;
+    }
     case 'pick': {
       const pp = peppers.get(m.id);
       if (!pp || !near(p, pp.x, pp.y, 120)) return;
@@ -482,6 +584,7 @@ function boardsView() {
 // ---------- שרת HTTP ----------
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' };
 const PUB = path.join(__dirname, 'public');
+const THREE_DIR = path.join(__dirname, 'node_modules', 'three');
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
@@ -495,11 +598,13 @@ const server = http.createServer(async (req, res) => {
     return res.end(svg);
   }
   let file = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname);
-  file = path.normalize(path.join(PUB, file));
-  if (!file.startsWith(PUB)) { res.writeHead(403); return res.end(); }
+  let base = PUB;
+  if (file.startsWith('/vendor/three/')) { base = THREE_DIR; file = file.slice('/vendor/three'.length); }
+  file = path.normalize(path.join(base, file));
+  if (!file.startsWith(base)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (e, data) => {
     if (e) { res.writeHead(404); return res.end('לא נמצא'); }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': base === THREE_DIR ? 'max-age=86400' : 'no-cache' });
     res.end(data);
   });
 });
@@ -526,6 +631,7 @@ wss.on('connection', (ws) => {
       let A = accounts[token];
       const isNew = !A;
       if (!A) A = accounts[token] = { aid: crypto.randomBytes(5).toString('hex'), coins: START_COINS, inv: {}, quests: {}, visited: {}, best: {}, hats: [], hat: null, starters: {} };
+      Object.assign(A, { tools: A.tools || [], food: A.food == null ? 100 : A.food, water: A.water == null ? 100 : A.water, boxes: A.boxes || {}, places: A.places || {} });
       A.name = name; A.color = color;
       let qrGift = 0;
       if (m.qr && !A.qr) { A.qr = true; A.coins += QR_BONUS; qrGift = QR_BONUS; }
@@ -539,7 +645,7 @@ wss.on('connection', (ws) => {
       dirty = true;
 
       // הרכב ההתחלתי שבחרת
-      const type = MAP.STARTER_TYPES.includes(m.vehicle) ? m.vehicle : 'moto';
+      const type = MAP.STARTER_TYPES.includes(m.vehicle) ? m.vehicle : 'dirtbike';
       let v = vehicles.get(A.starters[type]);
       if (!v || v.driver || v.pass.length) {
         v = addVehicle(type, p.x, p.y, 0, A, { starter: true });
@@ -553,7 +659,7 @@ wss.on('connection', (ws) => {
 
       send(ws, {
         t: 'welcome', id: p.id, x: p.x, y: p.y, vid: v.id, now: Date.now(), isNew, qrGift,
-        acct: acctView(A), mazor, boards: boardsView(),
+        acct: acctView(A), mazor, moshav, boards: boardsView(),
         houses: houses.map(publicObj), containers: containers.map(publicObj),
         vehicles: [...vehicles.values()].map(vehicleView), peppers: [...peppers.values()],
       });
@@ -581,7 +687,26 @@ setInterval(() => {
 }, 15000);
 
 // קצת מטבעות על זמן משחק
-setInterval(() => { for (const p of players.values()) if (!p.kicked) addCoins(p, 5); }, 30000);
+setInterval(() => {
+  for (const p of players.values()) {
+    if (p.kicked) continue;
+    const A = p.acct;
+    if (A.food > 0 && A.water > 0) A.coins += 5;
+    pushAcct(p);
+  }
+}, 30000);
+// המשפחה צריכה לאכול ולשתות
+setInterval(() => {
+  for (const p of players.values()) {
+    if (p.kicked) continue;
+    const A = p.acct;
+    const before = [A.food, A.water];
+    A.water = Math.max(0, A.water - 2);
+    A.food = Math.max(0, A.food - 1);
+    if ((before[1] > 25 && A.water <= 25) || (before[0] > 25 && A.food <= 25)) send(p.ws, { t: 'needs' });
+    pushAcct(p);
+  }
+}, 10000);
 
 // תמונת מצב 15 פעמים בשנייה
 setInterval(() => {
@@ -589,7 +714,7 @@ setInterval(() => {
   broadcast({
     t: 'snap',
     players: [...players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, hat: p.acct.hat, x: Math.round(p.x), y: Math.round(p.y), a: +p.a.toFixed(2), vid: p.vid, mv: p.mv, sw: p.swim, r: p.race ? 1 : 0 })),
-    vehicles: [...vehicles.values()].map((v) => [v.id, Math.round(v.x), Math.round(v.y), +v.a.toFixed(2), v.driver, v.pass]),
+    vehicles: [...vehicles.values()].map((v) => [v.id, Math.round(v.x), Math.round(v.y), +v.a.toFixed(2), v.driver, v.pass, +(v.h || 0).toFixed(1)]),
   });
 }, 66);
 

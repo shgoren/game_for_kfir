@@ -8,16 +8,22 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;700;800&display=swap">
   <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }
+  </script>
 </head>
 <body>
   <canvas id="game"></canvas>
+  <canvas id="overlay"></canvas>
+
+  <div id="loading" class="overlay"><div class="card center"><div class="logo">🏜️</div><h2>בונים את הערבה...</h2><p class="sub" id="loadText">טוענים את המדבר, ההרים והדיונות</p></div></div>
 
   <!-- מסך כניסה -->
-  <div id="lobby" class="overlay">
+  <div id="lobby" class="overlay hidden">
     <div class="card lobbycard">
-      <div class="logo">🏜️</div>
+      <div class="logo">🏜️🏍️</div>
       <h1>עין יהב אונליין</h1>
-      <p class="sub">אתם חלוצים בערבה! מוצאים מקום, מקימים את המושב, בונים בתים, מתחרים ומטיילים עם חברים.</p>
+      <p class="sub">אתם משפחה של חלוצים בערבה! מוצאים מקום, מקימים את המושב, משיגים כלים, בונים בתים, מביאים עוד משפחות — ורוכבים על אופנועי שטח בדיונות.</p>
       <div id="qrGiftBanner" class="gift hidden">🎁 נכנסת דרך QR — מחכים לך עוד <b>200</b> מטבעות!</div>
       <label>איך קוראים לך?</label>
       <input id="nameInput" maxlength="14" placeholder="השם שלך" autocomplete="off">
@@ -25,6 +31,7 @@
       <div id="colors"></div>
       <label>עם מה יוצאים לשטח?</label>
       <div id="starters"></div>
+      <div class="familyline">👨‍👩‍👧‍👦 יוצאים עם כל המשפחה: אתה, אשתך ושני הילדים</div>
       <button id="playBtn" class="big">יוצאים לדרך! 🚀</button>
       <div class="rule">⚠️ חוק המושב: <b>מי שמרביץ — מגורש מהמשחק!</b></div>
       <div class="qrbox">
@@ -38,13 +45,17 @@
   <div id="hud" class="hidden">
     <div class="pills">
       <div class="pill" id="coins">🪙 0</div>
+      <div class="pill" id="water">💧 100</div>
+      <div class="pill" id="food">🍞 100</div>
+      <div class="pill" id="pop">🏘️ 0</div>
       <div class="pill" id="inv"></div>
+      <div class="pill" id="tools"></div>
       <div class="pill" id="online">👥 1</div>
       <button class="pill btnpill" id="soundBtn">🔊</button>
     </div>
     <div id="questCard"><div class="qt"></div><div class="qd"></div></div>
   </div>
-  <canvas id="minimap" class="hidden" width="200" height="222"></canvas>
+  <canvas id="minimap" class="hidden" width="180" height="200"></canvas>
   <div id="toasts"></div>
   <div id="hint" class="hidden"></div>
 
@@ -72,13 +83,11 @@
     <button id="placeCancel" class="big no">✖</button>
   </div>
 
-  <!-- צ'אט -->
   <form id="chatForm" class="hidden">
     <input id="chatInput" maxlength="80" placeholder="כתוב הודעה לחברים..." autocomplete="off">
     <button class="big">שלח</button>
   </form>
 
-  <!-- חלון כללי -->
   <div id="modal" class="overlay hidden">
     <div class="card">
       <button class="xbtn" id="modalX">✖</button>
@@ -86,7 +95,6 @@
     </div>
   </div>
 
-  <!-- גירוש -->
   <div id="kicked" class="overlay hidden">
     <div class="card center">
       <div class="boom">👊🚫</div>
@@ -99,7 +107,6 @@
 
   <script src="map.js"></script>
   <script src="js/audio.js"></script>
-  <script src="js/render.js"></script>
-  <script src="js/game.js"></script>
+  <script type="module" src="js/game.js"></script>
 </body>
 </html>
