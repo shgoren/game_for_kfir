@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#e8cf9a">
   <title>עין יהב אונליין</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;700;800&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,36 +14,52 @@
 
   <!-- מסך כניסה -->
   <div id="lobby" class="overlay">
-    <div class="card">
-      <h1>🏍️ עין יהב אונליין</h1>
-      <p class="sub">רוכבים על אופנועים, מטיילים עם חברים ובונים בתים במושב!</p>
+    <div class="card lobbycard">
+      <div class="logo">🏜️</div>
+      <h1>עין יהב אונליין</h1>
+      <p class="sub">אתם חלוצים בערבה! מוצאים מקום, מקימים את המושב, בונים בתים, מתחרים ומטיילים עם חברים.</p>
+      <div id="qrGiftBanner" class="gift hidden">🎁 נכנסת דרך QR — מחכים לך עוד <b>200</b> מטבעות!</div>
       <label>איך קוראים לך?</label>
       <input id="nameInput" maxlength="14" placeholder="השם שלך" autocomplete="off">
       <label>בחר צבע</label>
       <div id="colors"></div>
-      <button id="playBtn" class="big">יאללה נכנסים! 🚀</button>
+      <label>עם מה יוצאים לשטח?</label>
+      <div id="starters"></div>
+      <button id="playBtn" class="big">יוצאים לדרך! 🚀</button>
       <div class="rule">⚠️ חוק המושב: <b>מי שמרביץ — מגורש מהמשחק!</b></div>
       <div class="qrbox">
         <img class="qr" src="qr.svg" alt="QR להצטרפות">
-        <div>חברים רוצים להצטרף?<br>שיסרקו את הקוד עם הטלפון 📱<div class="joinurl"></div></div>
+        <div><b>חברים רוצים להצטרף?</b><br>שיסרקו את הקוד עם הטלפון 📱<br>כל מי שסורק מקבל <b>200 🪙</b> במתנה!<div class="joinurl"></div></div>
       </div>
     </div>
   </div>
 
   <!-- סרגל עליון -->
   <div id="hud" class="hidden">
-    <div class="pill" id="coins">🪙 0</div>
-    <div class="pill" id="online">👥 1</div>
-    <div class="pill hint" id="hint"></div>
+    <div class="pills">
+      <div class="pill" id="coins">🪙 0</div>
+      <div class="pill" id="inv"></div>
+      <div class="pill" id="online">👥 1</div>
+      <button class="pill btnpill" id="soundBtn">🔊</button>
+    </div>
+    <div id="questCard"><div class="qt"></div><div class="qd"></div></div>
   </div>
-  <canvas id="minimap" class="hidden" width="200" height="150"></canvas>
+  <canvas id="minimap" class="hidden" width="200" height="222"></canvas>
   <div id="toasts"></div>
+  <div id="hint" class="hidden"></div>
+
+  <!-- מרוץ -->
+  <div id="raceHud" class="hidden">
+    <div class="rtime">0.0</div>
+    <div class="rinfo"></div>
+    <button id="raceQuit" class="mini no">יציאה</button>
+  </div>
 
   <!-- כפתורים -->
   <div id="actions" class="hidden">
+    <button id="actBtn" class="act wide hidden"><b>⭐</b><span></span></button>
     <button id="rideBtn" class="act ride">🏍️<span>עלה</span></button>
-    <button id="buildBtn" class="act">🏠<span>בנה בית</span></button>
-    <button id="shopBtn" class="act">📦<span>מכולה</span></button>
+    <button id="buildBtn" class="act">🏠<span>בנה</span></button>
     <button id="chatBtn" class="act">💬<span>צ'אט</span></button>
     <button id="qrBtn" class="act">📱<span>הזמן</span></button>
     <button id="hitBtn" class="act danger">👊<span>הרבץ</span></button>
@@ -60,29 +78,11 @@
     <button class="big">שלח</button>
   </form>
 
-  <!-- חנות -->
-  <div id="shop" class="overlay hidden">
+  <!-- חלון כללי -->
+  <div id="modal" class="overlay hidden">
     <div class="card">
-      <h2>📦 חנות המכולות</h2>
-      <p class="sub">המכולה מופיעה לידך, עם כלי הרכב שלך!</p>
-      <button class="shopItem" data-kind="motos">
-        <b>🏍️🏍️🏍️ מכולת אופנועים</b><span>3 אופנועים בצבע שלך</span><em>🪙 120</em>
-      </button>
-      <button class="shopItem" data-kind="cars">
-        <b>🚙🛻 מכולת רכבים</b><span>ג'יפ ל-4 חברים + טרקטורון</span><em>🪙 200</em>
-      </button>
-      <p class="sub">💡 מרוויחים מטבעות מקטיף פלפלים 🌶️ בחממות, וגם סתם מזמן משחק</p>
-      <button class="big no closeBtn">סגור</button>
-    </div>
-  </div>
-
-  <!-- QR -->
-  <div id="qrModal" class="overlay hidden">
-    <div class="card center">
-      <h2>📱 הזמן חברים</h2>
-      <img class="qr bigqr" src="qr.svg" alt="QR">
-      <div class="joinurl"></div>
-      <button class="big closeBtn">סגור</button>
+      <button class="xbtn" id="modalX">✖</button>
+      <div id="modalBody"></div>
     </div>
   </div>
 
@@ -97,18 +97,9 @@
     </div>
   </div>
 
-  <!-- אישור הרבצה -->
-  <div id="hitConfirm" class="overlay hidden">
-    <div class="card center">
-      <div class="boom">👊</div>
-      <h2>בטוח שאתה רוצה להרביץ?</h2>
-      <p>מי שמרביץ <b>מגורש מהמשחק!</b></p>
-      <button id="hitYes" class="big danger">כן, להרביץ</button>
-      <button id="hitNo" class="big ok">לא, אני חבר טוב 😇</button>
-    </div>
-  </div>
-
   <script src="map.js"></script>
-  <script src="game.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/game.js"></script>
 </body>
 </html>
