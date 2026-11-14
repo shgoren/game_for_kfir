@@ -111,7 +111,11 @@ let pendingCode = '';
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/`);
-  ws.onopen = () => { ws.send(JSON.stringify({ t: 'join', name: G.myName, color: G.myColor, token, vehicle: starter, qr: viaQR, code: pendingCode })); };
+  ws.onopen = () => {
+    let backup = null;
+    try { backup = JSON.parse(store.get('ey_backup') || 'null'); } catch (e) {}
+    ws.send(JSON.stringify({ t: 'join', name: G.myName, color: G.myColor, token, vehicle: starter, qr: viaQR, code: pendingCode, myCode: store.get('ey_code') || '', backup }));
+  };
   ws.onmessage = (e) => onMsg(JSON.parse(e.data));
   ws.onclose = () => {
     if (G.kicked || !G.playing) return;
@@ -154,6 +158,7 @@ function onMsg(m) {
       if (m.token && m.token !== token) { token = m.token; store.set('ey_token', token); }
       pendingCode = '';
       G.code = m.code;
+      if (m.code) store.set('ey_code', m.code);
       if (m.restored) setTimeout(() => toast('🔑 ההתקדמות שלך חזרה! ברוך שובך', 'good'), 600);
       else if (m.isNew) setTimeout(() => toast(`🔑 קוד השחקן שלך: ${m.code} — שמור אותו! (כפתור 🔑 למעלה)`, 'good'), 6500);
       G.me.x = m.x; G.me.y = m.y; G.me.vid = m.vid; G.me.role = 'driver'; G.me.speed = 0; G.me.a = 0;
@@ -278,6 +283,10 @@ function onMsg(m) {
     case 'err': toast(m.text, 'err'); SFX.error(); break;
     case 'punch': SFX.punch(); W.puff(m.x, m.y, 30, '#ffdddd'); break;
     case 'kicked': showKicked(m.until); break;
+    case 'backup':
+      // גיבוי של כל העולם נשמר בטלפון — אם השרת יאבד הכול, הוא יחזור מכאן
+      try { store.set('ey_backup', JSON.stringify(m.b)); } catch (e) {}
+      break;
     case 'badCode':
       G.playing = false;
       $('playBtn').disabled = false; $('playBtn').textContent = 'יוצאים לדרך! 🚀';

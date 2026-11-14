@@ -95,23 +95,94 @@ async function load() {
     if (!raw) throw new Error('none');
     const data = JSON.parse(raw);
     if (data.version !== SAVE_VERSION) throw new Error('old');
-    houses = data.houses || [];
-    containers = data.containers || [];
-    accounts = data.accounts || {};
-    mazor = data.mazor || mazor;
-    moshav = data.moshav || moshav;
-    boards = data.boards || {};
-    for (const v of data.vehicles || []) vehicles.set(v.id, { ...v, driver: null, pass: [] });
-    for (const o of [...houses, ...containers, ...(data.vehicles || [])]) {
-      const n = parseInt(String(o.id).replace(/\D/g, ''), 10);
-      if (n >= nextId) nextId = n + 1;
-    }
-    console.log(`נטען עולם שמור: ${houses.length} בתים, ${containers.length} מכולות, בית מזור בשלב ${mazor.stage}`);
+    applyData(data);
+    console.log(`נטען עולם שמור: ${houses.length} בתים, בית מזור בשלב ${mazor.stage}`);
   } catch (e) {
     console.log('מתחילים עולם חדש');
+    fresh = true;
+    for (const pv of MAP.publicVehicles) addVehicle(pv.type, pv.x, pv.y, pv.a, null);
   }
-  for (const a of Object.values(accounts)) if (!a.code) a.code = newCode();
+}
+
+// טוען עולם שלם (מקובץ, מהענן או מגיבוי של שחקן)
+function applyData(data) {
+  houses = Array.isArray(data.houses) ? data.houses : [];
+  containers = Array.isArray(data.containers) ? data.containers : [];
+  accounts = data.accounts && typeof data.accounts === 'object' ? data.accounts : {};
+  mazor = data.mazor && typeof data.mazor.stage === 'number' ? data.mazor : { stage: 0, progress: {}, helpers: [] };
+  moshav = data.moshav && typeof data.moshav.families === 'number' ? data.moshav : { families: 4 };
+  boards = data.boards && typeof data.boards === 'object' ? data.boards : {};
+  vehicles.clear();
+  nextId = 1;
+  for (const v of Array.isArray(data.vehicles) ? data.vehicles : []) if (v && v.id && MAP.VEHICLES[v.type]) vehicles.set(v.id, { ...v, driver: null, pass: [] });
+  for (const o of [...houses, ...containers, ...vehicles.values()]) {
+    const n = parseInt(String(o.id).replace(/\D/g, ''), 10);
+    if (n >= nextId) nextId = n + 1;
+  }
+  for (const a of Object.values(accounts)) if (!a.code && !a.codeHash) a.code = newCode();
   for (const pv of MAP.publicVehicles) addVehicle(pv.type, pv.x, pv.y, pv.a, null);
+}
+
+// ---------- גיבוי אצל השחקנים (בלי שום הרשמה) ----------
+// כל כמה שניות כל שחקן מקבל עותק של העולם ושומר אותו בטלפון/במחשב.
+// אם השרת התעורר ריק (Render מחק הכול) — הגיבוי של השחקן הראשון שנכנס מחזיר את העולם.
+let fresh = false;
+const bootAt = Date.now();
+const H = (t) => crypto.createHash('sha256').update(String(t)).digest('hex').slice(0, 24);
+function worldForBackup() {
+  const acc = {};
+  for (const [k, a] of Object.entries(accounts)) {
+    const { code, ...rest } = a;
+    acc[k.startsWith('h:') ? k : 'h:' + H(k)] = Object.assign(rest, { codeHash: code ? H(code) : a.codeHash });
+  }
+  return {
+    version: SAVE_VERSION, houses, containers, accounts: acc, mazor, moshav, boards,
+    vehicles: [...vehicles.values()].filter((v) => v.ownerAid && !v.temp).map(({ driver, pass, ...v }) => v),
+  };
+}
+function sendBackups() {
+  if (!players.size) return;
+  const world = worldForBackup();
+  const at = Date.now();
+  for (const p of players.values()) if (!p.kicked) send(p.ws, { t: 'backup', b: { at, world, me: { token: p.token, acct: p.acct } } });
+}
+setInterval(sendBackups, 30000);
+const num0 = (v) => (typeof v === 'number' && isFinite(v) && v >= 0 ? Math.min(v, 1e7) : 0);
+function cleanAcct(a) {
+  if (!a || typeof a !== 'object') return null;
+  const objOf = (o) => (o && typeof o === 'object' && !Array.isArray(o) ? o : {});
+  const inv = {};
+  for (const k of Object.keys(MAP.MATERIALS)) inv[k] = num0(objOf(a.inv)[k]);
+  return {
+    aid: typeof a.aid === 'string' ? a.aid.slice(0, 20) : crypto.randomBytes(5).toString('hex'),
+    coins: num0(a.coins), inv, quests: objOf(a.quests), visited: objOf(a.visited), best: objOf(a.best),
+    hats: Array.isArray(a.hats) ? a.hats.filter((h) => typeof h === 'string').slice(0, 10) : [], hat: typeof a.hat === 'string' ? a.hat : null,
+    starters: {}, tools: Array.isArray(a.tools) ? a.tools.filter((t) => MAP.TOOLS[t]) : [],
+    food: Math.min(100, num0(a.food)), water: Math.min(100, num0(a.water)), boxes: objOf(a.boxes), places: objOf(a.places),
+    qr: !!a.qr, code: typeof a.code === 'string' && /^[A-Z0-9]{6}$/.test(a.code) ? a.code : null,
+  };
+}
+// מחזיר מהגיבוי של השחקן: את כל העולם (אם השרת ריק) ואת החשבון שלו (אם חסר)
+function tryRestore(b, token) {
+  if (!b || typeof b !== 'object') return false;
+  let restoredWorld = false;
+  if (fresh && players.size === 0 && b.world && b.world.version === SAVE_VERSION && Date.now() - bootAt < 20 * 60000) {
+    try {
+      const keep = accounts;
+      applyData(JSON.parse(JSON.stringify(b.world)));
+      for (const [k, a] of Object.entries(keep)) if (!accounts[k] && !accounts['h:' + H(k)]) accounts[k] = a;
+      fresh = false; restoredWorld = true; dirty = true;
+      console.log(`🗂️  העולם שוחזר מגיבוי של שחקן: ${houses.length} בתים, משק מזור בשלב ${mazor.stage}`);
+    } catch (e) { console.log('גיבוי לא תקין', e.message); }
+  }
+  if (b.me && b.me.token === token && !accounts[token] && !accounts['h:' + H(token)]) {
+    const a = cleanAcct(b.me.acct);
+    if (a) {
+      if (!a.code || Object.values(accounts).some((x) => x.code === a.code)) a.code = newCode();
+      accounts[token] = a; dirty = true;
+    }
+  }
+  return restoredWorld;
 }
 
 let saving = false;
@@ -630,7 +701,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname === '/info') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    return res.end(JSON.stringify({ joinUrl: joinUrl(req), online: players.size, qrBonus: QR_BONUS, storage: cloudOn ? 'cloud' : 'file', lastCloudSave, lastCloudError }));
+    return res.end(JSON.stringify({ joinUrl: joinUrl(req), online: players.size, qrBonus: QR_BONUS, storage: cloudOn ? 'cloud' : 'player-backups', lastCloudSave, lastCloudError, waitingForBackup: fresh }));
   }
   if (url.pathname === '/qr.svg') {
     const svg = await QRCode.toString(joinUrl(req) + '?qr=1', { type: 'svg', margin: 1, color: { dark: '#3b2412', light: '#ffffff' } });
@@ -665,7 +736,11 @@ wss.on('connection', (ws) => {
       let restored = false;
       const code = String(m.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
       if (code.length === 6) {
-        const found = Object.keys(accounts).find((k) => accounts[k].code === code);
+        let found = Object.keys(accounts).find((k) => accounts[k].code === code);
+        if (!found) {
+          const hk = Object.keys(accounts).find((k) => accounts[k].codeHash === H(code));
+          if (hk) { accounts[token] = Object.assign(accounts[hk], { code }); delete accounts[token].codeHash; delete accounts[hk]; found = token; }
+        }
         if (!found) { send(ws, { t: 'badCode' }); return ws.close(); }
         token = found; restored = true;
       }
@@ -675,10 +750,20 @@ wss.on('connection', (ws) => {
 
       const name = String(m.name || '').trim().slice(0, 14) || 'שחקן';
       const color = /^#[0-9a-fA-F]{6}$/.test(m.color) ? m.color : '#e74c3c';
+      const worldBack = tryRestore(m.backup, token);
+      if (!accounts[token] && accounts['h:' + H(token)]) {
+        accounts[token] = accounts['h:' + H(token)];
+        delete accounts['h:' + H(token)];
+        const mc = String(m.myCode || '').toUpperCase().slice(0, 6);
+        if (mc && !accounts[token].code && accounts[token].codeHash === H(mc)) accounts[token].code = mc;
+        delete accounts[token].codeHash;
+      }
+      if (fresh && Date.now() - bootAt > 20 * 60000) fresh = false;
       let A = accounts[token];
       const isNew = !A;
       if (!A) A = accounts[token] = { aid: crypto.randomBytes(5).toString('hex'), coins: START_COINS, inv: {}, quests: {}, visited: {}, best: {}, hats: [], hat: null, starters: {}, code: newCode() };
       if (!A.code) A.code = newCode();
+      delete A.codeHash;
       Object.assign(A, { tools: A.tools || [], food: A.food == null ? 100 : A.food, water: A.water == null ? 100 : A.water, boxes: A.boxes || {}, places: A.places || {} });
       A.name = name; A.color = color;
       let qrGift = 0;
@@ -712,6 +797,8 @@ wss.on('connection', (ws) => {
         vehicles: [...vehicles.values()].map(vehicleView), peppers: [...peppers.values()],
       });
       announce(`👋 ${p.name} הצטרף למשחק`);
+      if (worldBack) setTimeout(() => announce(`🗂️ העולם של עין יהב שוחזר מהגיבוי של ${p.name}!`), 1500);
+      setTimeout(() => { if (players.get(p.id) === p) send(ws, { t: 'backup', b: { at: Date.now(), world: worldForBackup(), me: { token: p.token, acct: A } } }); }, 3000);
       return;
     }
     if (p.kicked) return;
@@ -776,6 +863,7 @@ load().then(() => server.listen(PORT, () => {
 // כשהשרת נכבה (למשל כש-Render מרדים אותו) — שומרים קודם
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => {
   dirty = true; saving = false;
+  try { sendBackups(); } catch (e) {}
   setTimeout(() => process.exit(0), 8000);
   await save();
   process.exit(0);
