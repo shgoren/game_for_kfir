@@ -92,6 +92,19 @@ $('nameInput').value = store.get('ey_name') || '';
 if (viaQR) $('qrGiftBanner').classList.remove('hidden');
 fetch('info').then((r) => r.json()).then((i) => { document.querySelectorAll('.joinurl').forEach((e) => (e.textContent = i.joinUrl)); }).catch(() => {});
 
+// ---------- התקנה כאפליקציה ----------
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+let installEvt = null;
+const standalone = matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; $('installBtn').classList.remove('hidden'); });
+if (isIOS && !standalone) $('installBtn').classList.remove('hidden');
+$('installBtn').onclick = async () => {
+  if (installEvt) { installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('installBtn').classList.add('hidden'); return; }
+  openModal('<div class="medal">📲</div><h2 style="text-align:center">מתקינים באייפון / אייפד</h2><p class="sub" style="font-size:18px">1. לוחצים על כפתור <b>השיתוף</b> ⬆️ בתחתית ספארי<br>2. בוחרים <b>"הוספה למסך הבית"</b><br>3. לוחצים <b>"הוסף"</b> — והמשחק מופיע כמו אפליקציה! 🎉</p>');
+};
+addEventListener('appinstalled', () => { $('installBtn').classList.add('hidden'); toast('📲 המשחק הותקן! אפשר לפתוח אותו מהמסך הראשי', 'good'); });
+
 // ---------- רשת ----------
 let ws = null;
 function connect() {

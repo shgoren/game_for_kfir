@@ -1,0 +1,18 @@
+{
+  "name": "עין יהב אונליין",
+  "short_name": "עין יהב",
+  "description": "משחק רשת על מושב עין יהב — אופנועי שטח, משפחה, בנייה ותחרויות בערבה",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#e8cf9a",
+  "theme_color": "#e8cf9a",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

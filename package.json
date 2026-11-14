@@ -21,5 +21,8 @@
     "three": "^0.170.0",
     "ws": "^8.23.0"
   },
-  "private": true
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  }
 }

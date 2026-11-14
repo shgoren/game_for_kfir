@@ -1,0 +1,13 @@
+# העלאה ל-Render בלחיצה אחת (ראו README)
+services:
+  - type: web
+    name: ein-yahav-online
+    runtime: node
+    plan: free
+    branch: ccr-e516cff8-fv8f9m
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /info
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
