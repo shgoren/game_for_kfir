@@ -125,3 +125,9 @@ button { font-family: inherit; cursor: pointer; color: inherit; }
   #raceHud { top: auto; bottom: calc(150px + env(safe-area-inset-bottom)); }
   #hint { bottom: calc(205px + env(safe-area-inset-bottom)); font-size: 13px; }
 }
+
+.codebox { margin-top: 12px; background: #fff; border: 2px dashed #d9a35b; border-radius: 12px; padding: 8px 12px; }
+.codebox summary { cursor: pointer; font-weight: 700; }
+.codebox input { margin-top: 8px; text-transform: uppercase; letter-spacing: 4px; text-align: center; }
+.codebox small { display: block; margin-top: 6px; color: var(--soft); }
+.bigcode { direction: ltr; font-size: 44px; font-weight: 800; letter-spacing: 8px; text-align: center; background: #fff3c4; border: 3px dashed #f1c40f; border-radius: 16px; padding: 10px; margin: 10px 0; user-select: text; -webkit-user-select: text; }

@@ -58,9 +58,42 @@ function addVehicle(type, x, y, a, owner, extra) {
   return v;
 }
 
-function load() {
+// ---------- שמירה בענן (Upstash Redis — חינם) ----------
+const CLOUD_URL = (process.env.UPSTASH_REDIS_REST_URL || '').trim().replace(/\/$/, '');
+const CLOUD_TOKEN = (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim();
+const CLOUD_KEY = process.env.SAVE_KEY || 'ein-yahav-world';
+const cloudOn = !!(CLOUD_URL && CLOUD_TOKEN);
+let lastCloudSave = null, lastCloudError = null;
+async function cloudGet() {
+  const r = await fetch(`${CLOUD_URL}/get/${CLOUD_KEY}`, { headers: { Authorization: `Bearer ${CLOUD_TOKEN}` } });
+  if (!r.ok) throw new Error('cloud get ' + r.status);
+  return (await r.json()).result;
+}
+async function cloudSet(str) {
+  const r = await fetch(`${CLOUD_URL}/set/${CLOUD_KEY}`, { method: 'POST', headers: { Authorization: `Bearer ${CLOUD_TOKEN}` }, body: str });
+  if (!r.ok) throw new Error('cloud set ' + r.status + ' ' + (await r.text()).slice(0, 200));
+}
+
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function newCode() {
+  const used = new Set(Object.values(accounts).map((a) => a.code));
+  for (;;) {
+    let c = '';
+    for (let i = 0; i < 6; i++) c += CODE_CHARS[crypto.randomInt(CODE_CHARS.length)];
+    if (!used.has(c)) return c;
+  }
+}
+
+async function load() {
   try {
-    const data = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf8'));
+    let raw = null;
+    if (cloudOn) {
+      try { raw = await cloudGet(); console.log(raw ? '☁️  נטען עולם מהענן' : '☁️  הענן ריק — מתחילים עולם חדש'); }
+      catch (e) { console.log('☁️  שגיאה בטעינה מהענן:', e.message); }
+    }
+    if (!raw && fs.existsSync(SAVE_FILE)) raw = fs.readFileSync(SAVE_FILE, 'utf8');
+    if (!raw) throw new Error('none');
+    const data = JSON.parse(raw);
     if (data.version !== SAVE_VERSION) throw new Error('old');
     houses = data.houses || [];
     containers = data.containers || [];
@@ -77,20 +110,27 @@ function load() {
   } catch (e) {
     console.log('מתחילים עולם חדש');
   }
+  for (const a of Object.values(accounts)) if (!a.code) a.code = newCode();
   for (const pv of MAP.publicVehicles) addVehicle(pv.type, pv.x, pv.y, pv.a, null);
 }
 
-function save(sync) {
-  if (!dirty) return;
+let saving = false;
+async function save() {
+  if (!dirty || saving) return;
   dirty = false;
-  const data = {
+  saving = true;
+  const str = JSON.stringify({
     version: SAVE_VERSION, houses, containers, accounts, mazor, moshav, boards,
     vehicles: [...vehicles.values()].filter((v) => v.ownerAid && !v.temp).map(({ driver, pass, ...v }) => v),
-  };
-  if (sync) fs.writeFileSync(SAVE_FILE, JSON.stringify(data));
-  else fs.writeFile(SAVE_FILE, JSON.stringify(data), () => {});
+  });
+  try { fs.writeFileSync(SAVE_FILE, str); } catch (e) {}
+  if (cloudOn) {
+    try { await cloudSet(str); lastCloudSave = Date.now(); lastCloudError = null; }
+    catch (e) { lastCloudError = e.message; dirty = true; console.log('☁️  שגיאה בשמירה לענן:', e.message); }
+  }
+  saving = false;
 }
-setInterval(save, 10000);
+setInterval(save, 15000);
 
 const extraSolids = () => houses.concat(containers);
 const vehicleView = (v) => ({ h: v.h || 0, id: v.id, type: v.type, x: Math.round(v.x), y: Math.round(v.y), a: +v.a.toFixed(2), owner: v.owner, ownerAid: v.ownerAid, color: v.color, temp: !!v.temp, driver: v.driver, pass: v.pass });
@@ -117,7 +157,7 @@ const announce = (text) => broadcast({ t: 'msg', text });
 const err = (p, text) => send(p.ws, { t: 'err', text });
 
 function acctView(a) {
-  return { aid: a.aid, coins: a.coins, inv: a.inv, quests: a.quests, visited: a.visited, best: a.best, hat: a.hat, hats: a.hats, tools: a.tools, food: Math.round(a.food), water: Math.round(a.water), boxes: a.boxes, places: a.places };
+  return { code: a.code, aid: a.aid, coins: a.coins, inv: a.inv, quests: a.quests, visited: a.visited, best: a.best, hat: a.hat, hats: a.hats, tools: a.tools, food: Math.round(a.food), water: Math.round(a.water), boxes: a.boxes, places: a.places };
 }
 function pushAcct(p) { dirty = true; send(p.ws, { t: 'acct', acct: acctView(p.acct) }); }
 function addCoins(p, n) { p.acct.coins = Math.max(0, p.acct.coins + n); pushAcct(p); }
@@ -590,7 +630,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname === '/info') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    return res.end(JSON.stringify({ joinUrl: joinUrl(req), online: players.size, qrBonus: QR_BONUS }));
+    return res.end(JSON.stringify({ joinUrl: joinUrl(req), online: players.size, qrBonus: QR_BONUS, storage: cloudOn ? 'cloud' : 'file', lastCloudSave, lastCloudError }));
   }
   if (url.pathname === '/qr.svg') {
     const svg = await QRCode.toString(joinUrl(req) + '?qr=1', { type: 'svg', margin: 1, color: { dark: '#3b2412', light: '#ffffff' } });
@@ -621,7 +661,14 @@ wss.on('connection', (ws) => {
     try { m = JSON.parse(raw); } catch (e) { return; }
     if (!p) {
       if (m.t !== 'join') return;
-      const token = String(m.token || '').slice(0, 64) || crypto.randomBytes(8).toString('hex');
+      let token = String(m.token || '').slice(0, 64) || crypto.randomBytes(8).toString('hex');
+      let restored = false;
+      const code = String(m.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+      if (code.length === 6) {
+        const found = Object.keys(accounts).find((k) => accounts[k].code === code);
+        if (!found) { send(ws, { t: 'badCode' }); return ws.close(); }
+        token = found; restored = true;
+      }
       const until = bans.get(token);
       if (until && until > Date.now()) { send(ws, { t: 'kicked', until }); return ws.close(); }
       for (const q of players.values()) if (q.token === token) { try { q.ws.close(); } catch (e) {} }
@@ -630,7 +677,8 @@ wss.on('connection', (ws) => {
       const color = /^#[0-9a-fA-F]{6}$/.test(m.color) ? m.color : '#e74c3c';
       let A = accounts[token];
       const isNew = !A;
-      if (!A) A = accounts[token] = { aid: crypto.randomBytes(5).toString('hex'), coins: START_COINS, inv: {}, quests: {}, visited: {}, best: {}, hats: [], hat: null, starters: {} };
+      if (!A) A = accounts[token] = { aid: crypto.randomBytes(5).toString('hex'), coins: START_COINS, inv: {}, quests: {}, visited: {}, best: {}, hats: [], hat: null, starters: {}, code: newCode() };
+      if (!A.code) A.code = newCode();
       Object.assign(A, { tools: A.tools || [], food: A.food == null ? 100 : A.food, water: A.water == null ? 100 : A.water, boxes: A.boxes || {}, places: A.places || {} });
       A.name = name; A.color = color;
       let qrGift = 0;
@@ -658,7 +706,7 @@ wss.on('connection', (ws) => {
       v.driver = p.id; p.vid = v.id;
 
       send(ws, {
-        t: 'welcome', id: p.id, x: p.x, y: p.y, vid: v.id, now: Date.now(), isNew, qrGift,
+        t: 'welcome', id: p.id, x: p.x, y: p.y, vid: v.id, now: Date.now(), isNew, qrGift, token, code: A.code, restored,
         acct: acctView(A), mazor, moshav, boards: boardsView(),
         houses: houses.map(publicObj), containers: containers.map(publicObj),
         vehicles: [...vehicles.values()].map(vehicleView), peppers: [...peppers.values()],
@@ -718,11 +766,17 @@ setInterval(() => {
   });
 }, 66);
 
-load();
-server.listen(PORT, () => {
+load().then(() => server.listen(PORT, () => {
   console.log('\n🏍️  עין יהב אונליין רץ!');
   console.log(`   במחשב הזה:   http://localhost:${PORT}`);
-  console.log(`   מהטלפון (אותו WiFi): http://${lanIp()}:${PORT}  (או סרקו את ה-QR במשחק)\n`);
-});
+  console.log(`   מהטלפון (אותו WiFi): http://${lanIp()}:${PORT}  (או סרקו את ה-QR במשחק)`);
+  console.log(cloudOn ? '   ☁️  שמירה בענן: פעילה\n' : '   💾 שמירה לקובץ בלבד (בלי ענן)\n');
+}));
 
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { dirty = true; save(true); process.exit(0); });
+// כשהשרת נכבה (למשל כש-Render מרדים אותו) — שומרים קודם
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => {
+  dirty = true; saving = false;
+  setTimeout(() => process.exit(0), 8000);
+  await save();
+  process.exit(0);
+});

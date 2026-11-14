@@ -107,10 +107,11 @@ addEventListener('appinstalled', () => { $('installBtn').classList.add('hidden')
 
 // ---------- רשת ----------
 let ws = null;
+let pendingCode = '';
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/`);
-  ws.onopen = () => ws.send(JSON.stringify({ t: 'join', name: G.myName, color: G.myColor, token, vehicle: starter, qr: viaQR }));
+  ws.onopen = () => { ws.send(JSON.stringify({ t: 'join', name: G.myName, color: G.myColor, token, vehicle: starter, qr: viaQR, code: pendingCode })); };
   ws.onmessage = (e) => onMsg(JSON.parse(e.data));
   ws.onclose = () => {
     if (G.kicked || !G.playing) return;
@@ -130,6 +131,7 @@ const addV = (v) => G.vehicles.set(v.id, { ...v, tx: v.x, ty: v.y, ta: v.a, th: 
 function setAcct(a) {
   const prevCoins = G.acct.coins;
   G.acct = a;
+  if (a.code) G.code = a.code;
   $('coins').textContent = '🪙 ' + a.coins.toLocaleString();
   if (G.playing && a.coins > prevCoins) SFX.coin();
   $('inv').textContent = Object.keys(M.MATERIALS).filter((k) => a.inv[k] > 0).map((k) => M.MATERIALS[k].emoji + a.inv[k]).join(' ');
@@ -149,6 +151,11 @@ function onMsg(m) {
   switch (m.t) {
     case 'welcome': {
       G.myId = m.id; G.offset = m.now - Date.now();
+      if (m.token && m.token !== token) { token = m.token; store.set('ey_token', token); }
+      pendingCode = '';
+      G.code = m.code;
+      if (m.restored) setTimeout(() => toast('🔑 ההתקדמות שלך חזרה! ברוך שובך', 'good'), 600);
+      else if (m.isNew) setTimeout(() => toast(`🔑 קוד השחקן שלך: ${m.code} — שמור אותו! (כפתור 🔑 למעלה)`, 'good'), 6500);
       G.me.x = m.x; G.me.y = m.y; G.me.vid = m.vid; G.me.role = 'driver'; G.me.speed = 0; G.me.a = 0;
       G.vehicles.clear(); m.vehicles.forEach(addV);
       const mv = G.vehicles.get(m.vid); if (mv) mv.Y = ground(mv.x, mv.y);
@@ -271,6 +278,11 @@ function onMsg(m) {
     case 'err': toast(m.text, 'err'); SFX.error(); break;
     case 'punch': SFX.punch(); W.puff(m.x, m.y, 30, '#ffdddd'); break;
     case 'kicked': showKicked(m.until); break;
+    case 'badCode':
+      G.playing = false;
+      $('playBtn').disabled = false; $('playBtn').textContent = 'יוצאים לדרך! 🚀';
+      toast('🔑 הקוד לא נמצא — בדוק שהקלדת נכון', 'err'); SFX.error();
+      break;
   }
 }
 
@@ -305,12 +317,20 @@ function showKicked(until) {
 $('playBtn').onclick = () => {
   SFX.init(); SFX.click();
   G.myName = $('nameInput').value.trim().slice(0, 14) || 'שחקן';
+  pendingCode = $('codeInput').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (pendingCode && pendingCode.length !== 6) { toast('🔑 הקוד צריך להיות 6 תווים', 'err'); return; }
   store.set('ey_name', G.myName); store.set('ey_color', G.myColor); store.set('ey_starter3', starter);
   $('playBtn').disabled = true; $('playBtn').textContent = 'מתחבר...';
   connect();
 };
 $('nameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('playBtn').click(); });
 $('backBtn').onclick = () => { G.kicked = false; $('kicked').classList.add('hidden'); connect(); };
+$('keyBtn').onclick = () => {
+  SFX.click();
+  openModal(`<div class="medal">🔑</div><h2 style="text-align:center">קוד השחקן שלך</h2><div class="bigcode">${G.code || '------'}</div>
+    <p class="sub">כל מה שהשגת נשמר בענן. אם מחקת את המשחק, החלפת טלפון או שיחקת ממחשב אחר — במסך הכניסה לוחצים על <b>"🔑 כבר שיחקת?"</b> ומקלידים את הקוד.</p>
+    <p class="sub">📸 כדאי לצלם את המסך או לרשום את הקוד במקום בטוח. אל תיתן אותו לאחרים — מי שיש לו את הקוד משחק בדמות שלך.</p>`);
+};
 $('soundBtn').onclick = () => { SFX.init(); $('soundBtn').textContent = SFX.toggle() ? '🔇' : '🔊'; };
 
 // ---------- קלט ----------
