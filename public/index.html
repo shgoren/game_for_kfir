@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#e8cf9a">
+  <title>עין יהב אונליין</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- מסך כניסה -->
+  <div id="lobby" class="overlay">
+    <div class="card">
+      <h1>🏍️ עין יהב אונליין</h1>
+      <p class="sub">רוכבים על אופנועים, מטיילים עם חברים ובונים בתים במושב!</p>
+      <label>איך קוראים לך?</label>
+      <input id="nameInput" maxlength="14" placeholder="השם שלך" autocomplete="off">
+      <label>בחר צבע</label>
+      <div id="colors"></div>
+      <button id="playBtn" class="big">יאללה נכנסים! 🚀</button>
+      <div class="rule">⚠️ חוק המושב: <b>מי שמרביץ — מגורש מהמשחק!</b></div>
+      <div class="qrbox">
+        <img class="qr" src="qr.svg" alt="QR להצטרפות">
+        <div>חברים רוצים להצטרף?<br>שיסרקו את הקוד עם הטלפון 📱<div class="joinurl"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- סרגל עליון -->
+  <div id="hud" class="hidden">
+    <div class="pill" id="coins">🪙 0</div>
+    <div class="pill" id="online">👥 1</div>
+    <div class="pill hint" id="hint"></div>
+  </div>
+  <canvas id="minimap" class="hidden" width="200" height="150"></canvas>
+  <div id="toasts"></div>
+
+  <!-- כפתורים -->
+  <div id="actions" class="hidden">
+    <button id="rideBtn" class="act ride">🏍️<span>עלה</span></button>
+    <button id="buildBtn" class="act">🏠<span>בנה בית</span></button>
+    <button id="shopBtn" class="act">📦<span>מכולה</span></button>
+    <button id="chatBtn" class="act">💬<span>צ'אט</span></button>
+    <button id="qrBtn" class="act">📱<span>הזמן</span></button>
+    <button id="hitBtn" class="act danger">👊<span>הרבץ</span></button>
+  </div>
+
+  <!-- מצב בנייה -->
+  <div id="placeBar" class="hidden">
+    <span id="placeText">זוז כדי לבחור מקום</span>
+    <button id="placeOk" class="big ok">✔ בנה כאן</button>
+    <button id="placeCancel" class="big no">✖</button>
+  </div>
+
+  <!-- צ'אט -->
+  <form id="chatForm" class="hidden">
+    <input id="chatInput" maxlength="80" placeholder="כתוב הודעה לחברים..." autocomplete="off">
+    <button class="big">שלח</button>
+  </form>
+
+  <!-- חנות -->
+  <div id="shop" class="overlay hidden">
+    <div class="card">
+      <h2>📦 חנות המכולות</h2>
+      <p class="sub">המכולה מופיעה לידך, עם כלי הרכב שלך!</p>
+      <button class="shopItem" data-kind="motos">
+        <b>🏍️🏍️🏍️ מכולת אופנועים</b><span>3 אופנועים בצבע שלך</span><em>🪙 120</em>
+      </button>
+      <button class="shopItem" data-kind="cars">
+        <b>🚙🛻 מכולת רכבים</b><span>ג'יפ ל-4 חברים + טרקטורון</span><em>🪙 200</em>
+      </button>
+      <p class="sub">💡 מרוויחים מטבעות מקטיף פלפלים 🌶️ בחממות, וגם סתם מזמן משחק</p>
+      <button class="big no closeBtn">סגור</button>
+    </div>
+  </div>
+
+  <!-- QR -->
+  <div id="qrModal" class="overlay hidden">
+    <div class="card center">
+      <h2>📱 הזמן חברים</h2>
+      <img class="qr bigqr" src="qr.svg" alt="QR">
+      <div class="joinurl"></div>
+      <button class="big closeBtn">סגור</button>
+    </div>
+  </div>
+
+  <!-- גירוש -->
+  <div id="kicked" class="overlay hidden">
+    <div class="card center">
+      <div class="boom">👊🚫</div>
+      <h2>גורשת מהמשחק!</h2>
+      <p>במושב עין יהב לא מרביצים.<br>מי שמרביץ — מגורש.</p>
+      <p id="kickTimer"></p>
+      <button id="backBtn" class="big" disabled>חזרה למשחק</button>
+    </div>
+  </div>
+
+  <!-- אישור הרבצה -->
+  <div id="hitConfirm" class="overlay hidden">
+    <div class="card center">
+      <div class="boom">👊</div>
+      <h2>בטוח שאתה רוצה להרביץ?</h2>
+      <p>מי שמרביץ <b>מגורש מהמשחק!</b></p>
+      <button id="hitYes" class="big danger">כן, להרביץ</button>
+      <button id="hitNo" class="big ok">לא, אני חבר טוב 😇</button>
+    </div>
+  </div>
+
+  <script src="map.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
